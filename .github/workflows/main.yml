@@ -94,7 +94,15 @@ jobs:
             # Check if controller already exists
             if kubectl get deployment -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
               echo "AWS Load Balancer Controller already exists, checking status..."
-              kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
+              # Check if deployment is ready
+              if ! kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=60s; then
+                echo "Controller deployment stuck, checking pods..."
+                kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+                kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+                echo "Restarting controller deployment..."
+                kubectl rollout restart deployment/aws-load-balancer-controller -n kube-system
+                kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
+              fi
             else
               # Install AWS Load Balancer Controller
               curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.4.4/docs/install/iam_policy.json
