@@ -91,6 +91,10 @@ jobs:
 
         - name: Install AWS Load Balancer Controller
           run: |
+            # Install eksctl
+            curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+            sudo mv /tmp/eksctl /usr/local/bin
+            
             # Check if controller already exists
             if kubectl get deployment -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
               echo "AWS Load Balancer Controller exists but appears broken, removing it..."
@@ -106,10 +110,8 @@ jobs:
             
             # Fresh installation
             echo "Installing AWS Load Balancer Controller from scratch..."
-            curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.4.4/docs/install/iam_policy.json
-            aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json || true
             
-            # Create service account
+            # Create service account with IAM role
             eksctl create iamserviceaccount \
               --cluster=${{ env.EKS_CLUSTER }} \
               --namespace=kube-system \
