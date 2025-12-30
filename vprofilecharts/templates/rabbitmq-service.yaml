@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Values.rabbitmq.name }}
+  name: vpromq01
 spec:
   ports:
   - port: 5672

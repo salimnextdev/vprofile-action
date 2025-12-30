@@ -1,6 +1,7 @@
 app:
   name: vproapp
   image: vprofile/vprofileapp
+  tag: latest
   port: 8080
   replicas: 1
 
@@ -19,7 +20,7 @@ memcached:
 rabbitmq:
   name: vpromq01
   image: rabbitmq
-  port: 15672
+  port: 5672
   replicas: 1
 
 secrets:
