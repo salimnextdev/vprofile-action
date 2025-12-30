@@ -93,46 +93,47 @@ jobs:
           run: |
             # Check if controller already exists
             if kubectl get deployment -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
-              echo "AWS Load Balancer Controller already exists, checking status..."
-              # Check if deployment is ready
-              if ! kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=60s; then
-                echo "Controller deployment stuck, checking pods..."
-                kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-                kubectl describe pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-                echo "Restarting controller deployment..."
-                kubectl rollout restart deployment/aws-load-balancer-controller -n kube-system
-                kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
-              fi
-            else
-              # Install AWS Load Balancer Controller
-              curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.4.4/docs/install/iam_policy.json
-              aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json || true
-              
-              # Create service account
-              eksctl create iamserviceaccount \
-                --cluster=${{ env.EKS_CLUSTER }} \
-                --namespace=kube-system \
-                --name=aws-load-balancer-controller \
-                --role-name AmazonEKSLoadBalancerControllerRole \
-                --attach-policy-arn=arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:policy/AWSLoadBalancerControllerIAMPolicy \
-                --approve || true
-              
-              # Install controller
-              helm repo add eks https://aws.github.io/eks-charts
-              helm repo update
-              helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-                -n kube-system \
-                --set clusterName=${{ env.EKS_CLUSTER }} \
-                --set serviceAccount.create=false \
-                --set serviceAccount.name=aws-load-balancer-controller
-              
-              # Wait for deployment to be ready
-              kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
+              echo "AWS Load Balancer Controller exists but appears broken, removing it..."
+              # Force delete the broken deployment
+              helm uninstall aws-load-balancer-controller -n kube-system || true
+              kubectl delete deployment aws-load-balancer-controller -n kube-system --ignore-not-found=true
+              kubectl delete serviceaccount aws-load-balancer-controller -n kube-system --ignore-not-found=true
+              kubectl delete clusterrole aws-load-balancer-controller --ignore-not-found=true
+              kubectl delete clusterrolebinding aws-load-balancer-controller --ignore-not-found=true
+              echo "Waiting for cleanup..."
+              sleep 30
             fi
+            
+            # Fresh installation
+            echo "Installing AWS Load Balancer Controller from scratch..."
+            curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.4.4/docs/install/iam_policy.json
+            aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json || true
+            
+            # Create service account
+            eksctl create iamserviceaccount \
+              --cluster=${{ env.EKS_CLUSTER }} \
+              --namespace=kube-system \
+              --name=aws-load-balancer-controller \
+              --role-name AmazonEKSLoadBalancerControllerRole \
+              --attach-policy-arn=arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:policy/AWSLoadBalancerControllerIAMPolicy \
+              --approve --override-existing-serviceaccounts
+            
+            # Install controller
+            helm repo add eks https://aws.github.io/eks-charts
+            helm repo update
+            helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+              -n kube-system \
+              --set clusterName=${{ env.EKS_CLUSTER }} \
+              --set serviceAccount.create=false \
+              --set serviceAccount.name=aws-load-balancer-controller
+            
+            # Wait for deployment to be ready
+            echo "Waiting for controller to be ready..."
+            kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
             
             # Verify webhook service has endpoints
             echo "Checking webhook service endpoints..."
-            kubectl get endpoints aws-load-balancer-webhook-service -n kube-system || echo "Webhook endpoints not ready"
+            kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
 
         - name: Deploy Helm Chart to EKS
           run: |
