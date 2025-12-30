@@ -106,11 +106,66 @@ jobs:
             
             echo "Installing AWS Load Balancer Controller..."
             
+            # Create comprehensive IAM policy with all required permissions
+            cat > alb_policy.json << 'EOF'
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "iam:CreateServiceLinkedRole",
+                            "ec2:DescribeAccountAttributes",
+                            "ec2:DescribeAddresses",
+                            "ec2:DescribeAvailabilityZones",
+                            "ec2:DescribeInternetGateways",
+                            "ec2:DescribeVpcs",
+                            "ec2:DescribeVpcPeeringConnections",
+                            "ec2:DescribeSubnets",
+                            "ec2:DescribeSecurityGroups",
+                            "ec2:DescribeInstances",
+                            "ec2:DescribeNetworkInterfaces",
+                            "ec2:DescribeTags",
+                            "ec2:GetCoipPoolUsage",
+                            "ec2:GetManagedPrefixListEntries",
+                            "ec2:DescribeCoipPools",
+                            "ec2:CreateTags",
+                            "ec2:DeleteTags",
+                            "elasticloadbalancing:*",
+                            "autoscaling:DescribeAutoScalingGroups",
+                            "autoscaling:DescribeAutoScalingInstances",
+                            "autoscaling:DescribeLaunchConfigurations",
+                            "autoscaling:DescribeTags",
+                            "autoscaling:SetDesiredCapacity",
+                            "autoscaling:TerminateInstanceInAutoScalingGroup",
+                            "autoscaling:UpdateAutoScalingGroup",
+                            "ecs:CreateCluster",
+                            "ecs:CreateService",
+                            "ecs:DeleteCluster",
+                            "ecs:DeleteService",
+                            "ecs:DescribeClusters",
+                            "ecs:DescribeServices",
+                            "ecs:UpdateService",
+                            "wafv2:GetWebACL",
+                            "wafv2:GetWebACLForResource",
+                            "wafv2:AssociateWebACL",
+                            "wafv2:DisassociateWebACL",
+                            "shield:DescribeProtection",
+                            "shield:GetSubscriptionState",
+                            "shield:DescribeSubscription",
+                            "shield:CreateProtection",
+                            "shield:DeleteProtection"
+                        ],
+                        "Resource": "*"
+                    }
+                ]
+            }
+            EOF
+            
             # Update IAM policy
-            curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
             aws iam create-policy-version \
               --policy-arn arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:policy/AWSLoadBalancerControllerIAMPolicy \
-              --policy-document file://iam_policy.json \
+              --policy-document file://alb_policy.json \
               --set-as-default || echo "Policy update failed, continuing"
             
             # Force create service account
@@ -132,14 +187,10 @@ jobs:
               --set serviceAccount.create=false \
               --set serviceAccount.name=aws-load-balancer-controller
             
-            # Check deployment status (don't wait for full rollout)
+            # Check deployment status
             echo "Checking controller deployment..."
             kubectl get deployment aws-load-balancer-controller -n kube-system
-            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-            
-            # Wait briefly and continue
             sleep 30
-            echo "Controller installation completed, proceeding with deployment"
 
         - name: Deploy Helm Chart to EKS
           run: |
