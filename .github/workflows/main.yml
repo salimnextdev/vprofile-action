@@ -111,6 +111,13 @@ jobs:
             # Fresh installation
             echo "Installing AWS Load Balancer Controller from scratch..."
             
+            # Update IAM policy with latest version
+            curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
+            aws iam create-policy-version \
+              --policy-arn arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:policy/AWSLoadBalancerControllerIAMPolicy \
+              --policy-document file://iam_policy.json \
+              --set-as-default || echo "Policy update failed, continuing with existing policy"
+            
             # Create service account with IAM role
             eksctl create iamserviceaccount \
               --cluster=${{ env.EKS_CLUSTER }} \
