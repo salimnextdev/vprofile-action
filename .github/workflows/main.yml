@@ -92,7 +92,8 @@ jobs:
         - name: Install NGINX Ingress Controller
           run: |
             if kubectl get deployment -n ingress-nginx ingress-nginx-controller >/dev/null 2>&1; then
-              echo "NGINX Ingress Controller already exists, skipping installation"
+              echo "NGINX Ingress Controller exists, checking service type..."
+              kubectl patch svc ingress-nginx-controller -n ingress-nginx -p '{"spec":{"type":"LoadBalancer"}}'
             else
               helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
               helm repo update
@@ -109,3 +110,11 @@ jobs:
               --set app.tag=${{ github.run_number }} \
               --kubeconfig ~/.kube/config \
               --namespace default
+
+        - name: Check Ingress Controller Service
+          run: |
+            echo "Checking ingress controller service..."
+            kubectl get svc -n ingress-nginx
+            echo "Waiting for LoadBalancer to be ready..."
+            kubectl wait --for=condition=ready --timeout=300s service/ingress-nginx-controller -n ingress-nginx || true
+            kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "LoadBalancer not ready yet"
