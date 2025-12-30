@@ -34,7 +34,7 @@ jobs:
           run: sonar-scanner \
               -Dsonar.projectKey=$SONAR_PROJECT_KEY \
               -Dsonar.organization=$SONAR_ORGANIZATION \
-              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.host.url=$SONAR_URL \
               -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
               -Dsonar.sources=src/ \
               -Dsonar.junit.reportPaths=target/surefire-reports \
