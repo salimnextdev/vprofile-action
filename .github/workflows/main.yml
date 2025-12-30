@@ -142,11 +142,48 @@ jobs:
               --kubeconfig ~/.kube/config \
               --namespace default
 
-        - name: Check Load Balancer Status
+        - name: Verify Load Balancer Creation
           run: |
-            echo "Checking AWS Load Balancer Controller..."
-            kubectl get deployment -n kube-system aws-load-balancer-controller || echo "AWS LB Controller not found"
-            echo "Checking ingress resources..."
-            kubectl get ingress -A
-            echo "Checking services..."
-            kubectl get svc -A | grep LoadBalancer
+            echo "=== Verifying Load Balancer Setup ==="
+            
+            # 1. Confirm AWS Load Balancer Controller is running
+            echo "1. Checking AWS Load Balancer Controller status..."
+            kubectl get deployment aws-load-balancer-controller -n kube-system
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+            
+            # 2. Verify webhook service has endpoints
+            echo "2. Checking webhook service endpoints..."
+            kubectl get endpoints aws-load-balancer-webhook-service -n kube-system
+            
+            # 3. Check ingress resource
+            echo "3. Checking ingress resource..."
+            kubectl get ingress vpro-ingress -n default -o wide
+            kubectl describe ingress vpro-ingress -n default
+            
+            # 4. Wait for ALB to be provisioned (up to 5 minutes)
+            echo "4. Waiting for ALB to be provisioned..."
+            for i in {1..30}; do
+              ALB_HOST=$(kubectl get ingress vpro-ingress -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+              if [ ! -z "$ALB_HOST" ] && [ "$ALB_HOST" != "null" ]; then
+                echo "✅ ALB provisioned successfully!"
+                echo "ALB Hostname: $ALB_HOST"
+                
+                # 5. Get ALB details from AWS
+                echo "5. Getting ALB details from AWS..."
+                aws elbv2 describe-load-balancers --query 'LoadBalancers[?DNSName==`'$ALB_HOST'`].[LoadBalancerName,State.Code,AvailabilityZones[].ZoneName]' --output table
+                
+                # 6. Test ALB connectivity
+                echo "6. Testing ALB connectivity..."
+                curl -I "http://$ALB_HOST" --connect-timeout 10 || echo "ALB not yet responding (normal during initial setup)"
+                
+                echo "🎉 Load Balancer verification complete!"
+                exit 0
+              fi
+              echo "Waiting for ALB... (attempt $i/30)"
+              sleep 10
+            done
+            
+            echo "❌ ALB not provisioned within 5 minutes. Checking for issues..."
+            kubectl get events -n default --sort-by='.lastTimestamp' | tail -10
+            kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20
+            exit 1
