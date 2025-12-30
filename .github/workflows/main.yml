@@ -89,19 +89,29 @@ jobs:
               --docker-password=$(aws ecr get-login-password --region ${{ env.AWS_REGION }}) \
               -n default
 
-        - name: Install NGINX Ingress Controller
+        - name: Install AWS Load Balancer Controller
           run: |
-            if kubectl get deployment -n ingress-nginx ingress-nginx-controller >/dev/null 2>&1; then
-              echo "NGINX Ingress Controller exists, checking service type..."
-              kubectl patch svc ingress-nginx-controller -n ingress-nginx -p '{"spec":{"type":"LoadBalancer"}}'
-            else
-              helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-              helm repo update
-              helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-                --namespace ingress-nginx \
-                --create-namespace \
-                --set controller.service.type=LoadBalancer
-            fi
+            # Install AWS Load Balancer Controller
+            curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.4.4/docs/install/iam_policy.json
+            aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json || true
+            
+            # Create service account
+            eksctl create iamserviceaccount \
+              --cluster=${{ env.EKS_CLUSTER }} \
+              --namespace=kube-system \
+              --name=aws-load-balancer-controller \
+              --role-name AmazonEKSLoadBalancerControllerRole \
+              --attach-policy-arn=arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:policy/AWSLoadBalancerControllerIAMPolicy \
+              --approve || true
+            
+            # Install controller
+            helm repo add eks https://aws.github.io/eks-charts
+            helm repo update
+            helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+              -n kube-system \
+              --set clusterName=${{ env.EKS_CLUSTER }} \
+              --set serviceAccount.create=false \
+              --set serviceAccount.name=aws-load-balancer-controller || true
 
         - name: Deploy Helm Chart to EKS
           run: |
@@ -111,10 +121,11 @@ jobs:
               --kubeconfig ~/.kube/config \
               --namespace default
 
-        - name: Check Ingress Controller Service
+        - name: Check Load Balancer Status
           run: |
-            echo "Checking ingress controller service..."
-            kubectl get svc -n ingress-nginx
-            echo "Waiting for LoadBalancer to be ready..."
-            kubectl wait --for=condition=ready --timeout=300s service/ingress-nginx-controller -n ingress-nginx || true
-            kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "LoadBalancer not ready yet"
+            echo "Checking AWS Load Balancer Controller..."
+            kubectl get deployment -n kube-system aws-load-balancer-controller || echo "AWS LB Controller not found"
+            echo "Checking ingress resources..."
+            kubectl get ingress -A
+            echo "Checking services..."
+            kubectl get svc -A | grep LoadBalancer
