@@ -4,9 +4,11 @@ kind: Ingress
 metadata:
   name: vpro-ingress
   annotations:
-    nginx.ingress.kubernetes.io/use-regex: "true"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /
 spec:
-  ingressClassName: {{ .Values.ingress.className }}
+  ingressClassName: alb
   rules:
   - host: {{ .Values.ingress.host }}
     http:

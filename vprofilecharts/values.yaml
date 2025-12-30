@@ -34,6 +34,6 @@ service:
 
 ingress:
   enabled: true
-  className: nginx
+  className: alb
   host: vprofile.salimnextdev.site
   path: /
